@@ -120,6 +120,19 @@ struct parsed_pe_internal {
   list<reloc> relocs;
   list<exportent> exports;
   list<symbol> symbols;
+
+  ~parsed_pe_internal() {
+    for (section s : secs) {
+      if (s.sectionData != nullptr) {
+        delete s.sectionData;
+      }
+    }
+    for (resource r : rsrcs) {
+      if (r.buf != nullptr) {
+        delete r.buf;
+      }
+    }
+  }
 };
 
 ::uint32_t err = 0;
@@ -340,6 +353,10 @@ bool parse_resource_table(bounded_buffer *sectionData,
       rde->name_str.clear();
     } else if (depth == 2) {
       rde->lang_str.clear();
+    }
+
+    if (dirent == nullptr) {
+      delete rde;
     }
   }
 

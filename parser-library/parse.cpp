@@ -22,118 +22,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+#include "buffer.h"
 #include "parse.h"
 #include "nt-headers.h"
 #include "to_string.h"
 #include <algorithm>
-#include <list>
 #include <stdexcept>
 #include <string.h>
 
 using namespace std;
 
 namespace peparse {
-
-struct section {
-  string sectionName;
-  ::uint64_t sectionBase;
-  bounded_buffer *sectionData;
-  image_section_header sec;
-};
-
-struct importent {
-  VA addr;
-  string symbolName;
-  string moduleName;
-};
-
-struct exportent {
-  VA addr;
-  string symbolName;
-  string moduleName;
-};
-
-struct reloc {
-  VA shiftedAddr;
-  reloc_type type;
-};
-
-#define SYMBOL_NAME_OFFSET(sn) ((uint32_t)(sn.data >> 32))
-#define SYMBOL_TYPE_HI(x) (x.type >> 8)
-
-union symbol_name {
-  uint8_t shortName[NT_SHORT_NAME_LEN];
-  uint32_t zeroes;
-  uint64_t data;
-};
-
-struct aux_symbol_f1 {
-  uint32_t tagIndex;
-  uint32_t totalSize;
-  uint32_t pointerToLineNumber;
-  uint32_t pointerToNextFunction;
-};
-
-struct aux_symbol_f2 {
-  uint16_t lineNumber;
-  uint32_t pointerToNextFunction;
-};
-
-struct aux_symbol_f3 {
-  uint32_t tagIndex;
-  uint32_t characteristics;
-};
-
-struct aux_symbol_f4 {
-  uint8_t filename[SYMTAB_RECORD_LEN];
-  string strFilename;
-};
-
-struct aux_symbol_f5 {
-  uint32_t length;
-  uint16_t numberOfRelocations;
-  uint16_t numberOfLineNumbers;
-  uint32_t checkSum;
-  uint16_t number;
-  uint8_t selection;
-};
-
-struct symbol {
-  string strName;
-  symbol_name name;
-  uint32_t value;
-  int16_t sectionNumber;
-  uint16_t type;
-  uint8_t storageClass;
-  uint8_t numberOfAuxSymbols;
-  list<aux_symbol_f1> aux_symbols_f1;
-  list<aux_symbol_f2> aux_symbols_f2;
-  list<aux_symbol_f3> aux_symbols_f3;
-  list<aux_symbol_f4> aux_symbols_f4;
-  list<aux_symbol_f5> aux_symbols_f5;
-};
-
-struct parsed_pe_internal {
-  list<section> secs;
-  list<resource> rsrcs;
-  list<importent> imports;
-  list<reloc> relocs;
-  list<exportent> exports;
-  list<symbol> symbols;
-
-  ~parsed_pe_internal() {
-    for (section s : secs) {
-      if (s.sectionData != nullptr) {
-        delete s.sectionData;
-      }
-    }
-    for (resource r : rsrcs) {
-      if (r.buf != nullptr) {
-        delete r.buf;
-      }
-    }
-  }
-};
 
 ::uint32_t err = 0;
 std::string err_loc;
@@ -344,7 +243,7 @@ bool parse_resource_table(bounded_buffer *sectionData,
         return false;
       }
 
-      rsrcs.push_back(rsrc);
+      rsrcs.push_back(std::move(rsrc));
     }
 
     if (depth == 0) {
@@ -443,7 +342,7 @@ bool getSections(bounded_buffer *b,
     ::uint32_t highOff = lowOff + curSec.SizeOfRawData;
     thisSec.sectionData = splitBuffer(fileBegin, lowOff, highOff);
 
-    secs.push_back(thisSec);
+    secs.push_back(std::move(thisSec));
   }
 
   return true;
@@ -594,7 +493,7 @@ bool readNtHeader(bounded_buffer *b, nt_header_32 &header) {
   }
 
   if (!readFileHeader(fhb, header.FileHeader)) {
-    deleteBuffer(fhb);
+    delete fhb;
     return false;
   }
 
@@ -607,7 +506,7 @@ bool readNtHeader(bounded_buffer *b, nt_header_32 &header) {
       splitBuffer(b, _offset(nt_header_32, OptionalHeader), b->bufLen);
 
   if (ohb == nullptr) {
-    deleteBuffer(fhb);
+    delete fhb;
     PE_ERR(PEERR_MEM);
     return false;
   }
@@ -618,32 +517,32 @@ bool readNtHeader(bounded_buffer *b, nt_header_32 &header) {
   if (!readWord(ohb, 0, header.OptionalMagic)) {
     PE_ERR(PEERR_READ);
     if (ohb != nullptr) {
-      deleteBuffer(ohb);
+      delete ohb;
     }
-    deleteBuffer(fhb);
+    delete fhb;
     return false;
   }
   if (header.OptionalMagic == NT_OPTIONAL_32_MAGIC) {
     if (!readOptionalHeader(ohb, header.OptionalHeader)) {
-      deleteBuffer(ohb);
-      deleteBuffer(fhb);
+      delete ohb;
+      delete fhb;
       return false;
     }
   } else if (header.OptionalMagic == NT_OPTIONAL_64_MAGIC) {
     if (!readOptionalHeader64(ohb, header.OptionalHeader64)) {
-      deleteBuffer(ohb);
-      deleteBuffer(fhb);
+      delete ohb;
+      delete fhb;
       return false;
     }
   } else {
     PE_ERR(PEERR_MAGIC);
-    deleteBuffer(ohb);
-    deleteBuffer(fhb);
+    delete ohb;
+    delete fhb;
     return false;
   }
 
-  deleteBuffer(ohb);
-  deleteBuffer(fhb);
+  delete ohb;
+  delete fhb;
 
   return true;
 }
@@ -679,7 +578,7 @@ bool getHeader(bounded_buffer *file, pe_header &p, bounded_buffer *&rem) {
   if (!readNtHeader(ntBuf, p.nt)) {
     // err is set by readNtHeader
     if (ntBuf != nullptr) {
-      deleteBuffer(ntBuf);
+      delete ntBuf;
     }
     return false;
   }
@@ -699,13 +598,13 @@ bool getHeader(bounded_buffer *file, pe_header &p, bounded_buffer *&rem) {
         sizeof(::uint32_t) + sizeof(file_header) + sizeof(optional_header_64);
   } else {
     PE_ERR(PEERR_MAGIC);
-    deleteBuffer(ntBuf);
+    delete ntBuf;
     return false;
   }
 
   // update 'rem' to point to the space after the header
   rem = splitBuffer(ntBuf, rem_size, ntBuf->bufLen);
-  deleteBuffer(ntBuf);
+  delete ntBuf;
 
   return true;
 }
@@ -1550,7 +1449,6 @@ parsed_pe *ParsePEFromFile(const char *filePath) {
   p->internal = new (std::nothrow) parsed_pe_internal();
 
   if (p->internal == nullptr) {
-    deleteBuffer(p->fileBuffer);
     delete p;
     PE_ERR(PEERR_MEM);
     return nullptr;
@@ -1559,7 +1457,6 @@ parsed_pe *ParsePEFromFile(const char *filePath) {
   // get header information
   bounded_buffer *remaining = nullptr;
   if (!getHeader(p->fileBuffer, p->peHeader, remaining)) {
-    deleteBuffer(p->fileBuffer);
     delete p;
     // err is set by getHeader
     return nullptr;
@@ -1567,16 +1464,14 @@ parsed_pe *ParsePEFromFile(const char *filePath) {
 
   bounded_buffer *file = p->fileBuffer;
   if (!getSections(remaining, file, p->peHeader.nt, p->internal->secs)) {
-    deleteBuffer(remaining);
-    deleteBuffer(p->fileBuffer);
+    delete remaining;
     delete p;
     PE_ERR(PEERR_SECT);
     return nullptr;
   }
 
   if (!getResources(remaining, file, p->internal->secs, p->internal->rsrcs)) {
-    deleteBuffer(remaining);
-    deleteBuffer(p->fileBuffer);
+    delete remaining;
     delete p;
     PE_ERR(PEERR_RESC);
     return nullptr;
@@ -1584,8 +1479,7 @@ parsed_pe *ParsePEFromFile(const char *filePath) {
 
   // Get exports
   if (!getExports(p)) {
-    deleteBuffer(remaining);
-    deleteBuffer(p->fileBuffer);
+    delete remaining;
     delete p;
     PE_ERR(PEERR_MAGIC);
     return nullptr;
@@ -1593,8 +1487,7 @@ parsed_pe *ParsePEFromFile(const char *filePath) {
 
   // Get relocations, if exist
   if (!getRelocations(p)) {
-    deleteBuffer(remaining);
-    deleteBuffer(p->fileBuffer);
+    delete remaining;
     delete p;
     PE_ERR(PEERR_MAGIC);
     return nullptr;
@@ -1602,22 +1495,19 @@ parsed_pe *ParsePEFromFile(const char *filePath) {
 
   // Get imports
   if (!getImports(p)) {
-    deleteBuffer(remaining);
-    deleteBuffer(p->fileBuffer);
+    delete remaining;
     delete p;
     return nullptr;
   }
 
   // Get symbol table
   if (!getSymbolTable(p)) {
-    deleteBuffer(remaining);
-    deleteBuffer(p->fileBuffer);
+    delete remaining;
     delete p;
     return nullptr;
   }
 
-  deleteBuffer(remaining);
-
+  delete remaining;
   return p;
 }
 
@@ -1626,10 +1516,7 @@ void DestructParsedPE(parsed_pe *p) {
     return;
   }
 
-  deleteBuffer(p->fileBuffer);
-  delete p->internal;
   delete p;
-  return;
 }
 
 // iterate over the imports by VA and string
@@ -1641,8 +1528,6 @@ void IterImpVAString(parsed_pe *pe, iterVAStr cb, void *cbd) {
       break;
     }
   }
-
-  return;
 }
 
 // iterate over relocations in the PE file
@@ -1654,8 +1539,6 @@ void IterRelocs(parsed_pe *pe, iterReloc cb, void *cbd) {
       break;
     }
   }
-
-  return;
 }
 
 // Iterate over symbols (symbol table) in the PE file
@@ -1673,8 +1556,6 @@ void IterSymbols(parsed_pe *pe, iterSymbol cb, void *cbd) {
       break;
     }
   }
-
-  return;
 }
 
 // iterate over the exports by VA
@@ -1686,8 +1567,6 @@ void IterExpVA(parsed_pe *pe, iterExp cb, void *cbd) {
       break;
     }
   }
-
-  return;
 }
 
 // iterate over sections
@@ -1699,8 +1578,6 @@ void IterSec(parsed_pe *pe, iterSec cb, void *cbd) {
       break;
     }
   }
-
-  return;
 }
 
 bool ReadByteAtVA(parsed_pe *pe, VA v, ::uint8_t &b) {

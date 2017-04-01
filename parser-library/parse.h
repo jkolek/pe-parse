@@ -25,70 +25,18 @@ THE SOFTWARE.
 #ifndef _PARSE_H
 #define _PARSE_H
 #include <cstdint>
+#include <list>
 #include <string>
 
+#include "common.h"
+#include "buffer.h"
 #include "nt-headers.h"
 #include "to_string.h"
-
-#ifdef _MSC_VER
-#define __typeof__(x) std::remove_reference < decltype(x) > ::type
-#endif
-
-#define PE_ERR(x)           \
-  err = (pe_err) x;         \
-  err_loc.assign(__func__); \
-  err_loc += ":" + to_string<std::uint32_t>(__LINE__, dec);
-
-#define READ_WORD(b, o, inst, member)                                     \
-  if (!readWord(b, o + _offset(__typeof__(inst), member), inst.member)) { \
-    PE_ERR(PEERR_READ);                                                   \
-    return false;                                                         \
-  }
-
-#define READ_DWORD(b, o, inst, member)                                     \
-  if (!readDword(b, o + _offset(__typeof__(inst), member), inst.member)) { \
-    PE_ERR(PEERR_READ);                                                    \
-    return false;                                                          \
-  }
-
-#define READ_QWORD(b, o, inst, member)                                     \
-  if (!readQword(b, o + _offset(__typeof__(inst), member), inst.member)) { \
-    PE_ERR(PEERR_READ);                                                    \
-    return false;                                                          \
-  }
-
-#define READ_DWORD_PTR(b, o, inst, member)                                   \
-  if (!readDword(b, o + _offset(__typeof__(*inst), member), inst->member)) { \
-    PE_ERR(PEERR_READ);                                                      \
-    return false;                                                            \
-  }
-
-#define READ_BYTE(b, o, inst, member)                                     \
-  if (!readByte(b, o + _offset(__typeof__(inst), member), inst.member)) { \
-    PE_ERR(PEERR_READ);                                                   \
-    return false;                                                         \
-  }
-
-/* This variant returns NULL instead of false. */
-#define READ_DWORD_NULL(b, o, inst, member)                                \
-  if (!readDword(b, o + _offset(__typeof__(inst), member), inst.member)) { \
-    PE_ERR(PEERR_READ);                                                    \
-    return NULL;                                                           \
-  }
 
 namespace peparse {
 
 typedef std::uint32_t RVA;
 typedef std::uint64_t VA;
-
-struct buffer_detail;
-
-typedef struct _bounded_buffer {
-  std::uint8_t *buf;
-  std::uint32_t bufLen;
-  bool copy;
-  buffer_detail *detail;
-} bounded_buffer;
 
 struct resource {
   std::string type_str;
@@ -101,6 +49,45 @@ struct resource {
   std::uint32_t RVA;
   std::uint32_t size;
   bounded_buffer *buf;
+
+  // Default constructor
+  resource() : type(0), name(0), lang(0), codepage(0), RVA(0), size(0),
+      buf(nullptr) {}
+  // Copy constructor
+  resource(const resource &other) {
+    type_str = other.type_str;
+    name_str = other.name_str;
+    lang_str = other.lang_str;
+    type = other.type;
+    name = other.name;
+    lang = other.lang;
+    codepage = other.codepage;
+    RVA = other.RVA;
+    size = other.size;
+    buf = new bounded_buffer();
+    *buf = *(other.buf);
+  }
+  // Move constructor
+  resource(resource &&other) {
+    if (this != &other) {
+      type_str = other.type_str;
+      name_str = other.name_str;
+      lang_str = other.lang_str;
+      type = other.type;
+      name = other.name;
+      lang = other.lang;
+      codepage = other.codepage;
+      RVA = other.RVA;
+      size = other.size;
+      buf = other.buf;
+      other.buf = nullptr;
+    }
+  }
+  ~resource() {
+    if (buf != nullptr) {
+      delete buf;
+    }
+  }
 };
 
 // http://msdn.microsoft.com/en-us/library/ms648009(v=vs.85).aspx
@@ -128,31 +115,124 @@ enum resource_type {
   RT_MANIFEST = 24
 };
 
-enum pe_err {
-  PEERR_NONE = 0,
-  PEERR_MEM = 1,
-  PEERR_HDR = 2,
-  PEERR_SECT = 3,
-  PEERR_RESC = 4,
-  PEERR_SECTVA = 5,
-  PEERR_READ = 6,
-  PEERR_OPEN = 7,
-  PEERR_STAT = 8,
-  PEERR_MAGIC = 9
+struct section {
+  std::string sectionName;
+  ::uint64_t sectionBase;
+  bounded_buffer *sectionData;
+  image_section_header sec;
+
+  // Default constructor
+  section() : sectionBase(0), sectionData(nullptr) {}
+  // Copy constructor
+  section(const section &other) {
+    *this = other;
+  }
+  // Move constructor
+  section(section &&other) {
+    sectionName = other.sectionName;
+    sectionBase = other.sectionBase;
+    sectionData = other.sectionData;
+    other.sectionData = nullptr;
+    sec = other.sec;
+  }
+  // Copy assignment operator
+  section & operator=(const section &other) {
+    if (this != &other) {
+      sectionName = other.sectionName;
+      sectionBase = other.sectionBase;
+      sectionData = new bounded_buffer();
+      *sectionData = *(other.sectionData);
+      sec = other.sec;
+    }
+    return *this;
+  }
+  ~section() {
+    if (sectionData != nullptr) {
+      delete sectionData;
+    }
+  }
 };
 
-bool readByte(bounded_buffer *b, std::uint32_t offset, std::uint8_t &out);
-bool readWord(bounded_buffer *b, std::uint32_t offset, std::uint16_t &out);
-bool readDword(bounded_buffer *b, std::uint32_t offset, std::uint32_t &out);
-bool readQword(bounded_buffer *b, std::uint32_t offset, std::uint64_t &out);
+struct importent {
+  VA addr;
+  std::string symbolName;
+  std::string moduleName;
+};
 
-bounded_buffer *readFileToFileBuffer(const char *filePath);
-bounded_buffer *
-splitBuffer(bounded_buffer *b, std::uint32_t from, std::uint32_t to);
-void deleteBuffer(bounded_buffer *b);
-uint64_t bufLen(bounded_buffer *b);
+struct exportent {
+  VA addr;
+  std::string symbolName;
+  std::string moduleName;
+};
 
-struct parsed_pe_internal;
+struct reloc {
+  VA shiftedAddr;
+  reloc_type type;
+};
+
+#define SYMBOL_NAME_OFFSET(sn) ((uint32_t)(sn.data >> 32))
+#define SYMBOL_TYPE_HI(x) (x.type >> 8)
+
+union symbol_name {
+  uint8_t shortName[NT_SHORT_NAME_LEN];
+  uint32_t zeroes;
+  uint64_t data;
+};
+
+struct aux_symbol_f1 {
+  uint32_t tagIndex;
+  uint32_t totalSize;
+  uint32_t pointerToLineNumber;
+  uint32_t pointerToNextFunction;
+};
+
+struct aux_symbol_f2 {
+  uint16_t lineNumber;
+  uint32_t pointerToNextFunction;
+};
+
+struct aux_symbol_f3 {
+  uint32_t tagIndex;
+  uint32_t characteristics;
+};
+
+struct aux_symbol_f4 {
+  uint8_t filename[SYMTAB_RECORD_LEN];
+  std::string strFilename;
+};
+
+struct aux_symbol_f5 {
+  uint32_t length;
+  uint16_t numberOfRelocations;
+  uint16_t numberOfLineNumbers;
+  uint32_t checkSum;
+  uint16_t number;
+  uint8_t selection;
+};
+
+struct symbol {
+  std::string strName;
+  symbol_name name;
+  uint32_t value;
+  int16_t sectionNumber;
+  uint16_t type;
+  uint8_t storageClass;
+  uint8_t numberOfAuxSymbols;
+  std::list<aux_symbol_f1> aux_symbols_f1;
+  std::list<aux_symbol_f2> aux_symbols_f2;
+  std::list<aux_symbol_f3> aux_symbols_f3;
+  std::list<aux_symbol_f4> aux_symbols_f4;
+  std::list<aux_symbol_f5> aux_symbols_f5;
+};
+
+struct parsed_pe_internal {
+  std::list<section> secs;
+  std::list<resource> rsrcs;
+  std::list<importent> imports;
+  std::list<reloc> relocs;
+  std::list<exportent> exports;
+  std::list<symbol> symbols;
+};
 
 typedef struct _pe_header { nt_header_32 nt; } pe_header;
 
@@ -160,6 +240,18 @@ typedef struct _parsed_pe {
   bounded_buffer *fileBuffer;
   parsed_pe_internal *internal;
   pe_header peHeader;
+
+  // Constructor
+  _parsed_pe() : fileBuffer(nullptr), internal(nullptr) {}
+  // Destructor
+  ~_parsed_pe() {
+    if (fileBuffer != nullptr) {
+      delete fileBuffer;
+    }
+    if (internal != nullptr) {
+      delete internal;
+    }
+  }
 } parsed_pe;
 
 // get parser error status as integer

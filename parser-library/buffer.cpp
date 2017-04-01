@@ -22,7 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-#include "parse.h"
+#include "common.h"
+#include "buffer.h"
 #include <fstream>
 #include <string.h>
 
@@ -42,15 +43,6 @@ namespace peparse {
 
 extern ::uint32_t err;
 extern ::string err_loc;
-
-struct buffer_detail {
-#ifdef WIN32
-  HANDLE file;
-  HANDLE sec;
-#else
-  int fd;
-#endif
-};
 
 bool readByte(bounded_buffer *b, ::uint32_t offset, ::uint8_t &out) {
   if (b == nullptr) {
@@ -242,31 +234,6 @@ bounded_buffer *splitBuffer(bounded_buffer *b, ::uint32_t from, ::uint32_t to) {
   newBuff->bufLen = (to - from);
 
   return newBuff;
-}
-
-void deleteBuffer(bounded_buffer *b) {
-  if (b == nullptr) {
-    return;
-  }
-
-  if (!b->copy) {
-#ifdef WIN32
-    UnmapViewOfFile(b->buf);
-    CloseHandle(b->detail->sec);
-    CloseHandle(b->detail->file);
-#else
-    munmap(b->buf, b->bufLen);
-    close(b->detail->fd);
-#endif
-  }
-
-  if (b->detail != nullptr) {
-    delete b->detail;
-  }
-
-  delete b;
-
-  return;
 }
 
 uint64_t bufLen(bounded_buffer *b) {

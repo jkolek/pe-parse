@@ -40,6 +40,32 @@ using namespace std;
 
 namespace peparse {
 
+struct buffer_detail {
+#ifdef WIN32
+  HANDLE file;
+  HANDLE sec;
+#else
+  int fd;
+#endif
+};
+
+_bounded_buffer::~_bounded_buffer() {
+	if (!copy) {
+#ifdef WIN32
+		UnmapViewOfFile(buf);
+		CloseHandle(detail->sec);
+		CloseHandle(detail->file);
+#else
+		munmap(buf, bufLen);
+		close(detail->fd);
+#endif
+	}
+
+	if (detail != nullptr) {
+		delete detail;
+	}
+}
+
 extern ::uint32_t err;
 extern ::string err_loc;
 

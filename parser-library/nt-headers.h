@@ -25,7 +25,6 @@ THE SOFTWARE.
 #ifndef _NT_HEADERS
 #define _NT_HEADERS
 #include <cstdint>
-#include <string>
 
 #define _offset(t, f) ((std::uint32_t)(ptrdiff_t) & (((t *) 0)->f))
 

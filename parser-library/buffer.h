@@ -27,13 +27,6 @@ THE SOFTWARE.
 
 #include "to_string.h"
 
-#ifdef WIN32
-#include <windows.h>
-#else
-#include <sys/mman.h>
-#include <unistd.h>
-#endif
-
 #define PE_ERR(x)           \
   err = (pe_err) x;         \
   err_loc.assign(__func__); \
@@ -78,14 +71,7 @@ THE SOFTWARE.
 
 namespace peparse {
 
-struct buffer_detail {
-#ifdef WIN32
-  HANDLE file;
-  HANDLE sec;
-#else
-  int fd;
-#endif
-};
+struct buffer_detail;
 
 typedef struct _bounded_buffer {
   std::uint8_t *buf;
@@ -96,22 +82,7 @@ typedef struct _bounded_buffer {
   // Constructor
   _bounded_buffer() : buf(nullptr), bufLen(0), copy(false), detail(nullptr) {}
   // Destructor
-  ~_bounded_buffer() {
-    if (!copy) {
-#ifdef WIN32
-      UnmapViewOfFile(buf);
-      CloseHandle(detail->sec);
-      CloseHandle(detail->file);
-#else
-      munmap(buf, bufLen);
-      close(detail->fd);
-#endif
-    }
-
-    if (detail != nullptr) {
-      delete detail;
-    }
-  }
+  ~_bounded_buffer();
 } bounded_buffer;
 
 bool readByte(bounded_buffer *b, std::uint32_t offset, std::uint8_t &out);

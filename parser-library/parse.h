@@ -28,10 +28,13 @@ THE SOFTWARE.
 #include <list>
 #include <string>
 
-#include "common.h"
 #include "buffer.h"
 #include "nt-headers.h"
 #include "to_string.h"
+
+#ifdef _MSC_VER
+#define __typeof__(x) std::remove_reference < decltype(x) > ::type
+#endif
 
 namespace peparse {
 

@@ -50,20 +50,20 @@ struct buffer_detail {
 };
 
 _bounded_buffer::~_bounded_buffer() {
-	if (!copy) {
+  if (!copy) {
 #ifdef WIN32
-		UnmapViewOfFile(buf);
-		CloseHandle(detail->sec);
-		CloseHandle(detail->file);
+    UnmapViewOfFile(buf);
+    CloseHandle(detail->sec);
+    CloseHandle(detail->file);
 #else
-		munmap(buf, bufLen);
-		close(detail->fd);
+    munmap(buf, bufLen);
+    close(detail->fd);
 #endif
-	}
+  }
 
-	if (detail != nullptr) {
-		delete detail;
-	}
+  if (detail != nullptr) {
+    delete detail;
+  }
 }
 
 extern ::uint32_t err;

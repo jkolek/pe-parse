@@ -25,7 +25,6 @@ THE SOFTWARE.
 #ifndef _PARSE_H
 #define _PARSE_H
 #include <cstdint>
-#include <list>
 #include <string>
 
 #include "buffer.h"
@@ -118,124 +117,7 @@ enum resource_type {
   RT_MANIFEST = 24
 };
 
-struct section {
-  std::string sectionName;
-  ::uint64_t sectionBase;
-  bounded_buffer *sectionData;
-  image_section_header sec;
-
-  // Default constructor
-  section() : sectionBase(0), sectionData(nullptr) {}
-  // Copy constructor
-  section(const section &other) {
-    *this = other;
-  }
-  // Move constructor
-  section(section &&other) {
-    sectionName = other.sectionName;
-    sectionBase = other.sectionBase;
-    sectionData = other.sectionData;
-    other.sectionData = nullptr;
-    sec = other.sec;
-  }
-  // Copy assignment operator
-  section & operator=(const section &other) {
-    if (this != &other) {
-      sectionName = other.sectionName;
-      sectionBase = other.sectionBase;
-      sectionData = new bounded_buffer();
-      *sectionData = *(other.sectionData);
-      sec = other.sec;
-    }
-    return *this;
-  }
-  ~section() {
-    if (sectionData != nullptr) {
-      delete sectionData;
-    }
-  }
-};
-
-struct importent {
-  VA addr;
-  std::string symbolName;
-  std::string moduleName;
-};
-
-struct exportent {
-  VA addr;
-  std::string symbolName;
-  std::string moduleName;
-};
-
-struct reloc {
-  VA shiftedAddr;
-  reloc_type type;
-};
-
-#define SYMBOL_NAME_OFFSET(sn) ((uint32_t)(sn.data >> 32))
-#define SYMBOL_TYPE_HI(x) (x.type >> 8)
-
-union symbol_name {
-  uint8_t shortName[NT_SHORT_NAME_LEN];
-  uint32_t zeroes;
-  uint64_t data;
-};
-
-struct aux_symbol_f1 {
-  uint32_t tagIndex;
-  uint32_t totalSize;
-  uint32_t pointerToLineNumber;
-  uint32_t pointerToNextFunction;
-};
-
-struct aux_symbol_f2 {
-  uint16_t lineNumber;
-  uint32_t pointerToNextFunction;
-};
-
-struct aux_symbol_f3 {
-  uint32_t tagIndex;
-  uint32_t characteristics;
-};
-
-struct aux_symbol_f4 {
-  uint8_t filename[SYMTAB_RECORD_LEN];
-  std::string strFilename;
-};
-
-struct aux_symbol_f5 {
-  uint32_t length;
-  uint16_t numberOfRelocations;
-  uint16_t numberOfLineNumbers;
-  uint32_t checkSum;
-  uint16_t number;
-  uint8_t selection;
-};
-
-struct symbol {
-  std::string strName;
-  symbol_name name;
-  uint32_t value;
-  int16_t sectionNumber;
-  uint16_t type;
-  uint8_t storageClass;
-  uint8_t numberOfAuxSymbols;
-  std::list<aux_symbol_f1> aux_symbols_f1;
-  std::list<aux_symbol_f2> aux_symbols_f2;
-  std::list<aux_symbol_f3> aux_symbols_f3;
-  std::list<aux_symbol_f4> aux_symbols_f4;
-  std::list<aux_symbol_f5> aux_symbols_f5;
-};
-
-struct parsed_pe_internal {
-  std::list<section> secs;
-  std::list<resource> rsrcs;
-  std::list<importent> imports;
-  std::list<reloc> relocs;
-  std::list<exportent> exports;
-  std::list<symbol> symbols;
-};
+struct parsed_pe_internal;
 
 typedef struct _pe_header { nt_header_32 nt; } pe_header;
 
@@ -247,14 +129,7 @@ typedef struct _parsed_pe {
   // Constructor
   _parsed_pe() : fileBuffer(nullptr), internal(nullptr) {}
   // Destructor
-  ~_parsed_pe() {
-    if (fileBuffer != nullptr) {
-      delete fileBuffer;
-    }
-    if (internal != nullptr) {
-      delete internal;
-    }
-  }
+  ~_parsed_pe();
 } parsed_pe;
 
 // get parser error status as integer
